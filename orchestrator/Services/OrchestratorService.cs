@@ -18,8 +18,12 @@ public sealed class OrchestratorService(
     public async Task<int> RunAsync(CancellationToken ct)
     {
         var opts = options.Value;
-        var repoPath = Path.GetFullPath(opts.TargetRepoPath, AppContext.BaseDirectory);
-        var reportsDir = Path.GetFullPath(opts.ReportsDir, AppContext.BaseDirectory);
+        // Resolve relative paths against the launch working directory (cwd),
+        // not AppContext.BaseDirectory (= bin/Debug/netX.Y). This way running
+        // `dotnet run` from `lab-repo2/` makes "library-system" point to lab-repo2/library-system.
+        var baseDir = Directory.GetCurrentDirectory();
+        var repoPath = Path.GetFullPath(opts.TargetRepoPath, baseDir);
+        var reportsDir = Path.GetFullPath(opts.ReportsDir, baseDir);
         Directory.CreateDirectory(reportsDir);
 
         if (!Directory.Exists(repoPath))

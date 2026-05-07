@@ -29,15 +29,25 @@ public sealed class CopilotCliRunner(ILogger<CopilotCliRunner> logger)
                 stopwatch.Elapsed);
         }
 
+        // Resolve `copilot` against PATH (with PATHEXT on Windows) so the user
+        // can keep "copilot" in appsettings.json instead of an absolute path.
+        var resolvedExe = ResolveExecutable(executable);
+        bool isCmdWrapper = resolvedExe.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase)
+            || resolvedExe.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
         var psi = new ProcessStartInfo
         {
-            FileName = executable,
+            FileName = isCmdWrapper ? "cmd.exe" : resolvedExe,
             WorkingDirectory = workingDirectory,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true
         };
+        if (isCmdWrapper)
+        {
+            psi.ArgumentList.Add("/c");
+            psi.ArgumentList.Add(resolvedExe);
+        }
         psi.ArgumentList.Add("--agent");
         psi.ArgumentList.Add(agentName);
         psi.ArgumentList.Add("-p");
@@ -95,5 +105,37 @@ public sealed class CopilotCliRunner(ILogger<CopilotCliRunner> logger)
         int read;
         while ((read = await reader.ReadAsync(buffer, ct)) > 0)
             sink.Append(buffer, 0, read);
+    }
+
+    private static string ResolveExecutable(string nameOrPath)
+    {
+        // Already a path: caller asked for an explicit binary, use it as-is.
+        if (Path.IsPathRooted(nameOrPath) || nameOrPath.Contains('/') || nameOrPath.Contains('\\'))
+            return nameOrPath;
+
+        // Unix: Process.Start resolves PATH natively, no manual lookup needed.
+        if (!OperatingSystem.IsWindows())
+            return nameOrPath;
+
+        // Windows: Process.Start with UseShellExecute=false does NOT consult PATHEXT,
+        // so iterate PATH manually trying each PATHEXT extension (npm globals
+        // typically install .cmd shims on Windows).
+        var pathEnv = Environment.GetEnvironmentVariable("PATH") ?? "";
+        var pathExt = (Environment.GetEnvironmentVariable("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD")
+            .Split(';', StringSplitOptions.RemoveEmptyEntries);
+
+        foreach (var dir in pathEnv.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            foreach (var ext in pathExt)
+            {
+                var candidate = Path.Combine(dir, nameOrPath + ext);
+                if (File.Exists(candidate)) return candidate;
+            }
+            var asIs = Path.Combine(dir, nameOrPath);
+            if (File.Exists(asIs)) return asIs;
+        }
+
+        // Not found — let Process.Start fail with its native diagnostic.
+        return nameOrPath;
     }
 }
