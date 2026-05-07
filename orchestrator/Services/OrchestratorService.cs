@@ -51,6 +51,17 @@ public sealed class OrchestratorService(
 
         logger.LogInformation("Report written to {Path}", reportPath);
         Console.WriteLine($"\n✓ Report: {reportPath}");
-        return results.All(r => r.Success) ? 0 : 2;
+
+        var allOk = results.All(r => r.Success);
+        if (allOk)
+        {
+            Console.WriteLine($"✅ Esecuzione terminata con successo — {results.Count} agenti, tutti OK.");
+        }
+        else
+        {
+            var failed = results.Where(r => !r.Success).Select(r => r.AgentName);
+            Console.WriteLine($"⚠️ Esecuzione terminata con errori — agenti falliti: {string.Join(", ", failed)}");
+        }
+        return allOk ? 0 : 2;
     }
 }
