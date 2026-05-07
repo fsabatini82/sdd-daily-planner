@@ -1,0 +1,52 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using SddOrchestrator.Models;
+
+namespace SddOrchestrator.Services;
+
+/// <summary>
+/// Orchestrates one Copilot CLI invocation per specialized agent.
+/// Strategy: separation of concerns + targeted prompts + per-agent model.
+/// Each agent reads only the files it needs, on the right-sized model.
+/// </summary>
+public sealed class OrchestratorService(
+    CopilotCliRunner runner,
+    ReportRenderer renderer,
+    IOptions<OrchestratorOptions> options,
+    ILogger<OrchestratorService> logger)
+{
+    public async Task<int> RunAsync(CancellationToken ct)
+    {
+        var opts = options.Value;
+        var repoPath = Path.GetFullPath(opts.TargetRepoPath, AppContext.BaseDirectory);
+        var reportsDir = Path.GetFullPath(opts.ReportsDir, AppContext.BaseDirectory);
+        Directory.CreateDirectory(reportsDir);
+
+        if (!Directory.Exists(repoPath))
+        {
+            logger.LogError("Target repo path does not exist: {Path}", repoPath);
+            return 1;
+        }
+
+        logger.LogInformation("Target repo: {Repo}", repoPath);
+        logger.LogInformation("Reports dir: {Reports}", reportsDir);
+
+        var results = new List<AgentInvocationResult>();
+        foreach (var agent in opts.Agents)
+        {
+            logger.LogInformation("--- Invoking agent '{Agent}' ---", agent.Name);
+            var result = await runner.RunAsync(opts.CopilotExecutable, agent.Name, agent.Prompt, repoPath, ct);
+            results.Add(result);
+            logger.LogInformation("Agent '{Agent}' done in {Duration} — success: {Success}",
+                agent.Name, result.Duration, result.Success);
+        }
+
+        var report = renderer.Render(results);
+        var reportPath = Path.Combine(reportsDir, $"morning-report-{DateTime.Now:yyyyMMdd-HHmm}.md");
+        await File.WriteAllTextAsync(reportPath, report, ct);
+
+        logger.LogInformation("Report written to {Path}", reportPath);
+        Console.WriteLine($"\n✓ Report: {reportPath}");
+        return results.All(r => r.Success) ? 0 : 2;
+    }
+}
