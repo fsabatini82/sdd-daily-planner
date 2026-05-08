@@ -153,3 +153,86 @@ Per il pattern multi-repo (un task per repo, agenti centralizzati), vedi [`../ag
 2. **Aggiungere un 4° agente** (es. `security-reviewer`) con `model: gpt-5-mini` (Included = €0): drop di un nuovo `.agent.md` + entry in `appsettings.json`, niente ricompilazione.
 3. **Output → Teams** invece di file markdown: post-run hook in `Program.cs` che fa `curl` su un webhook con il contenuto del report.
 4. **Cost reporter inline**: estensione del `ReportRenderer` per aggiungere una tabella di stima token consumati (basata su lunghezza output e prompt).
+
+---
+
+## Setup Guide
+
+### 1 Prerequisiti
+
+| Requisito | Versione minima | Verifica |
+|-----------|-----------------|----------|
+| Node.js | 22+ | `node --version` |
+| .NET SDK | 8.0+ | `dotnet --version` |
+| GitHub Copilot CLI | latest | `copilot --version` |
+| Licenza GHCP | Pro / Pro+ / Business / Enterprise | <https://github.com/settings/copilot> |
+| OS | Windows 10/11, macOS 13+, Linux | — |
+| Terminale | PowerShell 7+ (Win), bash/zsh (mac/linux) | — |
+
+### 2 Installazioni rapide
+
+**Windows**:
+
+```powershell
+winget install OpenJS.NodeJS.LTS
+winget install Microsoft.DotNet.SDK.8
+npm install -g @github/copilot
+copilot --version
+```
+
+**macOS**:
+
+```bash
+brew install node@22 dotnet-sdk
+npm install -g @github/copilot
+copilot --version
+```
+
+**Linux** (Ubuntu/Debian):
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt-get install -y nodejs dotnet-sdk-8.0
+npm install -g @github/copilot
+copilot --version
+```
+
+### 3 PAT fine-grained con scope `Copilot Requests`
+
+⚠️ **Critical**: deve essere fine-grained, NON classic. I token classic (`ghp_*`) vengono **silenziosamente ignorati** dalla CLI.
+
+1. Vai su <https://github.com/settings/personal-access-tokens>
+2. **Generate new token** → user-owned (NON organization)
+3. Token name: `copilot-cli-lab2` · Expiration: 30-90 giorni
+4. Repository access: *Public Repositories (read-only)* è sufficiente
+5. **Permissions → Account permissions → Copilot Requests → Read-only**
+6. Genera, copia il token (inizia con `github_pat_...`)
+
+### 4 Configura `COPILOT_GITHUB_TOKEN`
+
+**Sessione corrente**:
+```powershell
+$env:COPILOT_GITHUB_TOKEN = "github_pat_..."   # PowerShell
+```
+```bash
+export COPILOT_GITHUB_TOKEN="github_pat_..."   # bash/zsh
+```
+
+**Persistente** (per scheduling):
+```powershell
+[Environment]::SetEnvironmentVariable("COPILOT_GITHUB_TOKEN", "github_pat_...", "User")
+```
+
+### 5 Clone & smoke test
+
+```powershell
+git clone <URL-DEL-REPO> sdd-cli-lab
+cd sdd-cli-lab\lab-repo2
+
+dotnet build .\orchestrator\SddOrchestrator.csproj
+# atteso: Build succeeded. 0 Warning(s) 0 Error(s)
+
+copilot --agent spec-reviewer -p 'Reply with JSON {"ok": true}' --allow-tool read --no-color
+```
+
+Se i comandi passano, sei pronto.
